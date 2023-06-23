@@ -1,0 +1,124 @@
+BasedOnStyle: LLVM
+
+ColumnLimit: 100
+
+ConstructorInitializerIndentWidth: 2
+ContinuationIndentWidth: 2
+IndentWidth: 2
+
+UseCRLF: false
+UseTab: Never
+
+MaxEmptyLinesToKeep: 2
+
+# IndentPPDirectives: BeforeHash
+
+ReflowComments: false
+
+IncludeBlocks: Regroup
+SortIncludes: CaseInsensitive
+
+IncludeCategories:
+  # Headers in <> without extension.
+  - Regex: '<([A-Za-z0-9\Q/-_\E])+>'
+    Priority: 3
+  # Headers in <> with extension.
+  - Regex: '<([A-Za-z0-9.\Q/-_\E])+>'
+    Priority: 2
+  # Headers in "" with extension.
+  - Regex: '"([A-Za-z0-9.\Q/-_\E])+"'
+    Priority: 1
+
+RawStringFormats:
+  - Language: Cpp
+    Delimiters: ["GLSL"]
+
+EmptyLineAfterAccessModifier: Always
+EmptyLineBeforeAccessModifier: Always
+IndentAccessModifiers: false
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterStruct: true
+  AfterUnion: true
+  AfterClass: true
+  AfterEnum: true
+  AfterNamespace: false
+  AfterFunction: true
+  AfterExternBlock: true
+  AfterControlStatement: true
+  BeforeCatch: true
+  BeforeWhile: true
+  BeforeElse: true
+  SplitEmptyFunction: false
+
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+BreakStringLiterals: true
+
+NamespaceIndentation: Inner
+CompactNamespaces: true
+
+AlignConsecutiveAssignments:
+  AcrossEmptyLines: false
+  AcrossComments: false
+  AlignCompound: true
+  PadOperators: true
+  Enabled: true
+
+AlignConsecutiveBitFields:
+  AcrossEmptyLines: false
+  AcrossComments: true
+  Enabled: true
+
+AlignConsecutiveDeclarations:
+  AcrossEmptyLines: false
+  AcrossComments: true
+  Enabled: true
+
+AlignConsecutiveMacros:
+  AcrossEmptyLines: false
+  AcrossComments: true
+  Enabled: true
+
+AlignArrayOfStructures: None
+
+AlignAfterOpenBracket: Align
+AlignOperands: AlignAfterOperator
+AlignTrailingComments: true
+
+AlignEscapedNewlines: Left
+
+PackConstructorInitializers: BinPack
+BinPackParameters: true
+BinPackArguments: true
+
+# PackConstructorInitializers: NextLine
+# BinPackParameters: false
+# BinPackArguments: false
+
+SpaceAfterCStyleCast: true
+
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortBlocksOnASingleLine: Always
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortEnumsOnASingleLine: false
+
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeConceptDeclarations: Always
+
+RequiresClausePosition: WithFollowing
+IndentRequiresClause: true
+
+SpaceBeforeCpp11BracedList: true
+Cpp11BracedListStyle: true
+
+# BreakBeforeBraces: Linux
+PointerAlignment: Left
+
+AllowShortLambdasOnASingleLine: Inline
+
+QualifierAlignment: Custom
+QualifierOrder:
+  ["inline", "static", "restrict", "constexpr", "const", "type", "volatile"]
