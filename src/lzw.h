@@ -4,9 +4,9 @@
 #include "standard.h"
 
 // Encodes a binary blob with LZW compression.
-u8* lzw_encode(u8* data, usize dataSize, usize* out_encodedSize);
+u8* lzw_encode(const u8* data, const usize dataLength, usize* out_encodedSize);
 
 // Decodes a LZW encoded binary blob.
-u8* lzw_decode(u8* data, usize dataSize, usize* out_decodedSize);
+u8* lzw_decode(const u8* data, const usize dataLength, usize* out_decodedSize);
 
 #endif

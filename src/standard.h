@@ -42,8 +42,11 @@ typedef struct
 // *******************
 
 #define mem_alloc(type, count)  ((type*) malloc(sizeof(type) * (count)))
-#define mem_realloc(ptr, count) (ptr = realloc(ptr, sizeof(typeof(*(ptr))) * (count)))
+#define mem_realloc(ptr, count) (ptr = realloc((ptr), sizeof(typeof(*(ptr))) * (count)))
 #define mem_delete(ptr)         free(ptr)
+
+#define mem_clear(ptr, offset, length) \
+  (memset((ptr + offset), 0x0, sizeof(typeof(&(ptr))) * length))
 
 // ***************
 // * Standard IO *

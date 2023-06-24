@@ -15,10 +15,11 @@ string str_concat(const string a, const string b)
   usize aLen = str_length(a);
   usize bLen = str_length(b);
 
-  string output = mem_alloc(char, aLen + bLen);
+  string output = mem_alloc(char, aLen + bLen + 1);
 
-  strcpy(output, a);
-  strcat(output, b);
+  strncpy(output, a, aLen);
+  strncpy(output + aLen, b, bLen);
+  output[aLen + bLen] = '\0';
 
   return output;
 }

@@ -7,13 +7,23 @@ i32 main(i32 argc, string argv[])
   {
     u64 time_start = time_now();
 
-    io_print("READING DATA");
+    // ...
+    const string encodedFilePath = str_concat(argv[1], ".encoded");
+    const string decodedFilePath = str_concat(argv[1], ".decoded");
+
+    fprintf(stdout, "Input:   %s\n", argv[1]);
+    fprintf(stdout, "Encoded: %s\n", encodedFilePath);
+    fprintf(stdout, "Decoded: %s\n", decodedFilePath);
+
+    fprintf(stdout, "----\n");
+
+    fprintf(stdout, "READING...");
 
     // ...
     File* file = io_fileOpen(argv[1], "rb");
     if (file == NULL)
     {
-      io_printError("Unable to open file");
+      io_printError("Unable to open file for read.");
       return -1;
     }
 
@@ -35,36 +45,42 @@ i32 main(i32 argc, string argv[])
       return -3;
     }
 
+    // ...
+    fprintf(stdout, "  %" PRIuPTR " bytes\n", bytesRead);
+
     // Close the file
     io_fileClose(file);
 
-    io_print("ENCODING...");
+    fprintf(stdout, "ENCODING...");
 
     // Compress the data
     usize encodedSize;
-    u8*   encodedData = lzw_encode(data, file->size, &encodedSize);
-    printf("ENCODED: %" PRIuPTR " bytes\n", encodedSize);
+    u8*   encodedData = lzw_encode(data, bytesRead, &encodedSize);
+    fprintf(stdout, " %" PRIuPTR " bytes\n", encodedSize);
 
     // Write compressed data to disk
-    string encodedFilePath = str_concat(argv[1], ".encoded");
-    File*  encodedFile     = io_fileOpen(encodedFilePath, "wb");
+    File* encodedFile = io_fileOpen(encodedFilePath, "wb");
+    if (encodedFile == NULL)
+    {
+      io_printError("Unable to open file for write.");
+      return -4;
+    }
+
+    // ...
     io_fileWrite(encodedFile, encodedData, encodedSize);
     io_fileClose(encodedFile);
 
-    io_print("DECODING...");
+    fprintf(stdout, "DECODING...");
 
     // Decompress the data
     usize decodedSize;
     u8*   decodedData = lzw_decode(encodedData, encodedSize, &decodedSize);
-    printf("DECODED: %" PRIuPTR " bytes (expected %" PRIuPTR ")\n", decodedSize, encodedSize);
+    fprintf(stdout, " %" PRIuPTR " bytes\n", decodedSize);
 
     // Write decompressed data to disk
-    string decodedFilePath = str_concat(argv[1], ".decoded");
-    File*  decodedFile     = io_fileOpen(str_concat(argv[1], ".decoded"), "wb");
+    File* decodedFile = io_fileOpen(str_concat(argv[1], ".decoded"), "wb");
     io_fileWrite(decodedFile, decodedData, decodedSize);
     io_fileClose(decodedFile);
-    
-    io_print("WRITES COMPLETE");
 
     // Free allocations
     mem_delete(encodedFilePath);
@@ -83,6 +99,10 @@ i32 main(i32 argc, string argv[])
     io_print("USAGE: lzw [file]");
     return 0;
   }
+
+  // Flush output streams
+  fflush(stdout);
+  fflush(stderr);
 
   return 0;
 }
