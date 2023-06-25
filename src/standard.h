@@ -6,30 +6,44 @@
 // ******************
 
 #include <inttypes.h>
+#include <malloc.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+// Unsigned Integer Primitives
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+// Signed Integer Primitives
+
 typedef int8_t  i8;
 typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
+// Floating-Point Number Primitives
+
 typedef float  f32;
 typedef double f64;
+
+// Pointer-Sized Signed and Unsigned Integers
 
 typedef uintptr_t uptr;
 typedef intptr_t  iptr;
 
 typedef size_t usize;
 
-typedef char* string;
+// String Related Types
+
+typedef char*    string;
+typedef uint32_t rune;
+
+// Other Built-In Types
 
 typedef struct
 {
@@ -41,12 +55,25 @@ typedef struct
 // * Memory Handling *
 // *******************
 
-#define mem_alloc(type, count)  ((type*) malloc(sizeof(type) * (count)))
-#define mem_realloc(ptr, count) (ptr = realloc((ptr), sizeof(typeof(*(ptr))) * (count)))
-#define mem_delete(ptr)         free(ptr)
+// Allocates a new block of memory.
+// std::memory::allocate[T](count: usize) -> T*
+#define mem_alloc(type, count) ((type*) malloc(sizeof(type) * (count)))
 
-#define mem_clear(ptr, offset, length) \
-  (memset((ptr + offset), 0x0, sizeof(typeof(&(ptr))) * length))
+// Allocates a new block of memory.
+// std::memory::allocate[T](count: usize) -> T*
+#define mem_stack_alloc(type, count) ((type*) alloca(sizeof(type) * (count)))
+
+// Free a previously allocated block of memory.
+// std::memory::free[T](ptr: T*)
+#define mem_delete(ptr) free(ptr)
+
+// Reallocates a previously allocated block of memory.
+// std::memory::reallocate[T](ptr: T*, count: usize) -> T*
+#define mem_realloc(ptr, count) realloc(ptr, sizeof(typeof(*(ptr))) * (count))
+
+// Sets a block of memory to zero.
+// std::memory::clear[T](ptr: T**, count: usize)
+#define mem_clear(ptr, count) (memset((ptr), 0x0, sizeof(typeof(*(ptr))) * count))
 
 // ***************
 // * Standard IO *

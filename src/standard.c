@@ -17,9 +17,12 @@ string str_concat(const string a, const string b)
 
   string output = mem_alloc(char, aLen + bLen + 1);
 
-  strncpy(output, a, aLen);
-  strncpy(output + aLen, b, bLen);
-  output[aLen + bLen] = '\0';
+  usize offset = 0;
+  for (usize i = 0; i < aLen; i++)
+    output[offset++] = a[i];
+  for (usize i = 0; i < bLen; i++)
+    output[offset++] = b[i];
+  output[offset] = '\0';
 
   return output;
 }

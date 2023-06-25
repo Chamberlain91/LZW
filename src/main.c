@@ -82,6 +82,38 @@ i32 main(i32 argc, string argv[])
     io_fileWrite(decodedFile, decodedData, decodedSize);
     io_fileClose(decodedFile);
 
+    fprintf(stdout, "----\n");
+
+    // ...
+    if (decodedSize != bytesRead)
+      fprintf(stderr, "Error: Decoded Size Incorrect\n");
+
+    // ...
+    bool  isNewError = true;
+    usize errors     = 0;
+
+    // ...
+    usize errorCheckSize = (decodedSize < bytesRead) ? decodedSize : bytesRead;
+    for (usize i = 0; i < errorCheckSize; i++)
+    {
+      if (data[i] != decodedData[i]) // mismatch
+      {
+        if (isNewError && errors < 10)
+        {
+          fprintf(stderr, "Error: Mismatched at offset %" PRIuPTR "\n", i);
+          isNewError = false;
+        }
+        errors++;
+      }
+      else
+      {
+        isNewError = true;
+      }
+    }
+
+    if (errors > 0)
+      fprintf(stderr, "Error: Encountered %" PRIuPTR " errors.\n", errors);
+
     // Free allocations
     mem_delete(encodedFilePath);
     mem_delete(encodedData);
