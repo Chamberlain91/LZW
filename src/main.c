@@ -1,25 +1,32 @@
 #include "lzw.h"
 #include "standard.h"
 
+#include <string.h>
+
 i32 main(i32 argc, string argv[])
 {
+  // // ...
+  // srand((u32) time_now());
+
+  // // Write decompressed data to disk
+  // File* randomFile = io_fileOpen("random.bin", "wb");
+  // usize randomSize = 1024 * 1024;
+  // u8*   randomData = mem_alloc(u8, randomSize);
+  // for (usize i = 0; i < randomSize; i++)
+  //   randomData[i] = i % 5 + rand() % 5;
+  // io_fileWrite(randomFile, randomData, randomSize);
+  // io_fileClose(randomFile);
+
   if (argc == 2) // exe name + parameter
   {
-    u64 time_start = time_now();
+    const string encodedFilePath = str_concat(argv[1], ".lzw");
+    const string decodedFilePath = str_concat(argv[1], ".lzw_decoded");
 
-    // ...
-    const string encodedFilePath = str_concat(argv[1], ".encoded");
-    const string decodedFilePath = str_concat(argv[1], ".decoded");
+    // ---------------
+    //  FILE READ STEP
+    // ---------------
 
-    fprintf(stdout, "Input:   %s\n", argv[1]);
-    fprintf(stdout, "Encoded: %s\n", encodedFilePath);
-    fprintf(stdout, "Decoded: %s\n", decodedFilePath);
-
-    fprintf(stdout, "----\n");
-
-    fprintf(stdout, "READING...");
-
-    // ...
+    // Opens the specified file.
     File* file = io_fileOpen(argv[1], "rb");
     if (file == NULL)
     {
@@ -40,23 +47,32 @@ i32 main(i32 argc, string argv[])
     usize bytesRead = io_fileRead(file, data, file->size);
     if (bytesRead != file->size)
     {
-      fprintf(stderr, "Read %" PRIuPTR " bytes, expected %" PRIuPTR "\n", bytesRead, file->size);
+      fprintf(stderr, "Read %8" PRIuPTR " bytes, expected %" PRIuPTR "\n", bytesRead, file->size);
       io_fileClose(file);
       return -3;
     }
 
-    // ...
-    fprintf(stdout, "  %" PRIuPTR " bytes\n", bytesRead);
-
-    // Close the file
+    // Close the file.
     io_fileClose(file);
 
-    fprintf(stdout, "ENCODING...");
+    // ---------------
+    //  ENCODING STEP
+    // ---------------
+
+    fprintf(stdout, "Encoding...");
+
+    u64 encodeTimeStart = time_now();
 
     // Compress the data
     usize encodedSize;
     u8*   encodedData = lzw_encode(data, bytesRead, &encodedSize);
-    fprintf(stdout, " %" PRIuPTR " bytes\n", encodedSize);
+
+    u64 encodeTimeEnd = time_now();
+    fprintf(stdout, " %8" PRIuPTR " bytes ", encodedSize);
+
+    // Report encoding execution time
+    printf("(%.2f ms) ", (f64) (encodeTimeEnd - encodeTimeStart) / 1000000.0);
+    printf("%.1f%%\n", ((f32) encodedSize / (f32) bytesRead) * 100);
 
     // Write compressed data to disk
     File* encodedFile = io_fileOpen(encodedFilePath, "wb");
@@ -66,53 +82,67 @@ i32 main(i32 argc, string argv[])
       return -4;
     }
 
+    // ---------------
+    //  DECODING STEP
+    // ---------------
+
     // ...
     io_fileWrite(encodedFile, encodedData, encodedSize);
     io_fileClose(encodedFile);
 
-    fprintf(stdout, "DECODING...");
+    fprintf(stdout, "Decoding...");
+
+    u64 decodeTimeStart = time_now();
 
     // Decompress the data
     usize decodedSize;
     u8*   decodedData = lzw_decode(encodedData, encodedSize, &decodedSize);
-    fprintf(stdout, " %" PRIuPTR " bytes\n", decodedSize);
+
+    u64 decodeTimeEnd = time_now();
+    fprintf(stdout, " %8" PRIuPTR " bytes ", decodedSize);
+
+    // Report decoding execution time
+    printf("(%.2f ms)\n", (f64) (decodeTimeEnd - decodeTimeStart) / 1000000.0);
 
     // Write decompressed data to disk
-    File* decodedFile = io_fileOpen(str_concat(argv[1], ".decoded"), "wb");
+    File* decodedFile = io_fileOpen(decodedFilePath, "wb");
     io_fileWrite(decodedFile, decodedData, decodedSize);
     io_fileClose(decodedFile);
 
-    fprintf(stdout, "----\n");
+    // ---------------------
+    //  ERROR CHECKING STEP
+    // ---------------------
 
-    // ...
+    // Check content size mismatch.
     if (decodedSize != bytesRead)
-      fprintf(stderr, "Error: Decoded Size Incorrect\n");
-
-    // ...
-    bool  isNewError = true;
-    usize errors     = 0;
-
-    // ...
-    usize errorCheckSize = (decodedSize < bytesRead) ? decodedSize : bytesRead;
-    for (usize i = 0; i < errorCheckSize; i++)
     {
-      if (data[i] != decodedData[i]) // mismatch
-      {
-        if (isNewError && errors < 10)
-        {
-          fprintf(stderr, "Error: Mismatched at offset %" PRIuPTR "\n", i);
-          isNewError = false;
-        }
-        errors++;
-      }
-      else
-      {
-        isNewError = true;
-      }
+      fprintf(stderr, "Error: Detected Size Mismatch.\n");
+      fprintf(stderr, "       Have %" PRIuPTR " bytes ", decodedSize);
+      fprintf(stderr, "(Expected %" PRIuPTR " bytes)\n", bytesRead);
     }
 
-    if (errors > 0)
-      fprintf(stderr, "Error: Encountered %" PRIuPTR " errors.\n", errors);
+    // Check content mismatch.
+    usize contentSize = (decodedSize < bytesRead) ? decodedSize : bytesRead;
+    if (memcmp(data, decodedData, contentSize) != 0)
+    {
+      fprintf(stderr, "Error: Detected Content Mismatch.\n");
+
+      usize errorCount = 0;
+      for (usize i = 0; i < contentSize; i++)
+      {
+        if (data[i] != decodedData[i])
+        {
+          // fprintf(stderr, "mismatch at %llu\n", i);
+          errorCount++;
+        }
+      }
+
+      fprintf(stderr, "       Found %" PRIuPTR " mismatched bytes.", errorCount);
+    }
+
+    // --------------
+    //  CLEANUP STEP
+    // --------------
 
     // Free allocations
     mem_delete(encodedFilePath);
@@ -120,11 +150,6 @@ i32 main(i32 argc, string argv[])
     mem_delete(decodedFilePath);
     mem_delete(decodedData);
     mem_delete(data);
-
-    // ...
-    u64 elapsed_ns = time_now() - time_start;
-    f64 elapsed    = (f64) elapsed_ns / 1000000.0;
-    printf("Execution took %f ms\n", elapsed);
   }
   else
   {

@@ -1,5 +1,6 @@
 #include "lzw.h"
 
+#include <ctype.h>
 #include <string.h>
 
 // -------------------
@@ -13,7 +14,7 @@ struct buffer_t
   usize offset;
 };
 
-void buffer_init(struct buffer_t* buffer);
+void buffer_init(struct buffer_t* buffer, usize capacity);
 void buffer_free(struct buffer_t* buffer);
 void buffer_write_u16(struct buffer_t* buffer, u16 value);
 void buffer_write_u8(struct buffer_t* buffer, u8 value);
@@ -47,7 +48,7 @@ u8* lzw_encode(const u8* input, const usize inputSize, usize* out_outputSize)
 
   // Initialize output stream.
   struct buffer_t output;
-  buffer_init(&output);
+  buffer_init(&output, inputSize);
 
   // Initialize dictionary.
   struct node_t* dict = mem_alloc(struct node_t, MAX_CODE_COUNT);
@@ -67,15 +68,19 @@ u8* lzw_encode(const u8* input, const usize inputSize, usize* out_outputSize)
     // Emit code for this sequence.
     buffer_write_u16(&output, (u16) (node - dict));
 
-    // If there are no more available codes, reset the dictionary.
-    if (nextCode == MAX_CODE_COUNT)
+    // If there is more data to encode.
+    if (input < inputEnd)
     {
-      mem_clear(dict, MAX_CODE_COUNT);
-      nextCode = 256;
-    }
+      // If there are no more available codes, reset the dictionary.
+      if (nextCode == MAX_CODE_COUNT)
+      {
+        mem_clear(dict, MAX_CODE_COUNT);
+        nextCode = 256;
+      }
 
-    // Update dictionary, concatenate previous string with new symbol.
-    node->next[*input] = &dict[nextCode++];
+      // Update dictionary, concatenate previous string with new symbol.
+      node->next[*input] = &dict[nextCode++];
+    }
   }
 
   // Free the dictionary memory.
@@ -92,7 +97,7 @@ u8* lzw_decode(const u8* input, usize inputSize, usize* out_outputSize)
   // TODO: WRITE BETTER ALGORITHM STEPS
 
   // ...
-  struct span_t
+  struct entry_t
   {
     usize offset;
     usize length;
@@ -104,74 +109,111 @@ u8* lzw_decode(const u8* input, usize inputSize, usize* out_outputSize)
   // error: outputSize == NULL ?
 
   // View the input as 16-bit codes.
-  const u16* symbolsEnd = (const u16*) (input + inputSize);
-  const u16* symbols    = (const u16*) (input);
+  const u16* codesEnd = (const u16*) (input + inputSize);
+  const u16* codes    = (const u16*) (input);
 
   // A resizable output buffer/stream.
   struct buffer_t output;
-  buffer_init(&output);
+  buffer_init(&output, inputSize);
 
   // Allocate Dictionary
-  struct span_t* dict = mem_alloc(struct span_t, MAX_CODE_COUNT);
+  struct entry_t* dict = mem_alloc(struct entry_t, MAX_CODE_COUNT);
   mem_clear(dict, MAX_CODE_COUNT);
 
   // ...
   usize nextCode = 256;
-  usize prevCode = 0;
+
+  // First code is always an alphabet code.
+  usize prevCode = *codes++;
+  dict[prevCode] = (struct entry_t) {.offset = 0, .length = 1};
+  buffer_write_u8(&output, (u8) prevCode);
 
   // While we have symbols to read.
-  while (symbols < symbolsEnd)
+  while (codes < codesEnd)
   {
     // Read the next encoded symbol.
-    const u16 symbol = *symbols++;
+    const u16 currCode = *codes++;
 
     // ...
-    const usize start = output.offset;
+    const struct entry_t currEntry = dict[currCode];
+    const struct entry_t prevEntry = dict[prevCode];
+
+    // if (currCode == 0x011D)
+    // {
+    //   printf("<%3u> => ", currCode);
+    //   for (usize i = 0; i < currEntry.length; i++)
+    //   {
+    //     u8 c = output.storage[currEntry.offset + i];
+    //     printf("[%c]", isgraph(c) ? c : ' ');
+    //   }
+    //   printf("\n");
+    // }
 
     // ...
-    struct span_t* entry = &dict[symbol];
-
-    if (entry->length > 0) // known code
-    {
-      if (prevCode == symbol)
-      {
-        // Write the partially known substring to the output + first character of this string.
-        buffer_write(&output, &output.storage[entry->offset], entry->length - 1);
-        buffer_write(&output, &output.storage[entry->offset], 1);
-      }
-      else
-      {
-        // Write the known substring to output.
-        buffer_write(&output, &output.storage[entry->offset], entry->length);
-      }
-    }
-    else if (symbol < 256) // unknown alphabet code
-    {
-      // Special Case: An "alphabet" string of length one.
-      buffer_write_u8(&output, (u8) symbol);
-
-      // Mark the most recent version of the "alphabet" string.
-      entry->offset = start;
-      entry->length = output.offset - start;
-    }
-    else // unknown code
-    {
-      io_printError("UNKNOWN CODE?");
-      exit(64);
-    }
-
-    // If there are no more available codes...
     if (nextCode == MAX_CODE_COUNT)
     {
-      // (Re)Initialize Dictionary
       mem_clear(dict, MAX_CODE_COUNT);
       nextCode = 256;
     }
 
-    // Stores a new entry for the current string + first symbol of the next.
-    struct span_t* new_entry = &dict[prevCode = nextCode++];
-    new_entry->offset        = start;
-    new_entry->length        = (output.offset - start) + 1;
+    // ...
+    if (currCode < 256 || currEntry.length > 0) // known code
+    {
+      // (step 1) add (string(prev) + first(string(curr)))) to dict
+      // (step 2) out (string(curr))
+
+      // ------------
+      // - (step 1) -
+      // ------------
+
+      struct entry_t* nextEntry = &dict[nextCode++];
+      nextEntry->offset         = prevEntry.offset;
+      nextEntry->length         = prevEntry.length + 1;
+
+      // ------------
+      // - (step 2) -
+      // ------------
+
+      if (currCode < 256 && currEntry.length == 0)
+      {
+        struct entry_t* entry = &dict[currCode];
+
+        // Update alphabet entry, now that it exists in memory.
+        entry->offset = output.offset;
+        entry->length = 1;
+
+        // Output alphabet entry
+        buffer_write_u8(&output, (u8) currCode);
+      }
+      else
+      {
+        // Output dictionary entry
+        buffer_write(&output, &output.storage[currEntry.offset], currEntry.length);
+      }
+    }
+    else // unknown code
+    {
+      // (step 1) add (string(prev) + first(string(prev))) to dict
+      // (step 2) out (string(prev) + first(string(prev)))
+
+      // ------------
+      // - (step 1) -
+      // ------------
+
+      struct entry_t* nextEntry = &dict[nextCode++];
+      nextEntry->offset         = output.offset;
+      nextEntry->length         = prevEntry.length + 1;
+
+      // ------------
+      // - (step 2) -
+      // ------------
+
+      buffer_write(&output, &output.storage[prevEntry.offset], prevEntry.length);
+      buffer_write(&output, &output.storage[prevEntry.offset], 1);
+    }
+
+    // ...
+    prevCode = currCode;
   }
 
   // ...
@@ -186,9 +228,9 @@ u8* lzw_decode(const u8* input, usize inputSize, usize* out_outputSize)
 //  WRITABLE BUFFER IMPLEMENTATION
 // --------------------------------
 
-void buffer_init(struct buffer_t* buffer)
+void buffer_init(struct buffer_t* buffer, usize capacity)
 {
-  buffer->capacity = 4096;
+  buffer->capacity = capacity;
   buffer->storage  = mem_alloc(u8, buffer->capacity);
   buffer->offset   = 0;
 }
