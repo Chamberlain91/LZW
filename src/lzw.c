@@ -71,15 +71,16 @@ u8* lzw_encode(const u8* input, const usize inputSize, usize* out_outputSize)
     // If there is more data to encode.
     if (input < inputEnd)
     {
-      // If there are no more available codes, reset the dictionary.
+      // Update dictionary, concatenate previous string with new symbol.
+      node->next[*input] = &dict[nextCode++];
+
+      // Dictionary is full, reset it to begin encoding a new chunk.
       if (nextCode == MAX_CODE_COUNT)
       {
+        // printf("RESET CODES\n");
         mem_clear(dict, MAX_CODE_COUNT);
         nextCode = 256;
       }
-
-      // Update dictionary, concatenate previous string with new symbol.
-      node->next[*input] = &dict[nextCode++];
     }
   }
 
@@ -96,10 +97,13 @@ u8* lzw_decode(const u8* input, usize inputSize, usize* out_outputSize)
   // LZW DECODING ALGORITHM
   // TODO: WRITE BETTER ALGORITHM STEPS
 
-  // ...
-  struct entry_t
+  // A span of bytes, to associate codes with a byte-string in the output.
+  struct span_t
   {
+    // Offset into the output buffer.
     usize offset;
+
+    // Length of the span in bytes.
     usize length;
   };
 
@@ -116,107 +120,72 @@ u8* lzw_decode(const u8* input, usize inputSize, usize* out_outputSize)
   struct buffer_t output;
   buffer_init(&output, inputSize);
 
-  // Allocate Dictionary
-  struct entry_t* dict = mem_alloc(struct entry_t, MAX_CODE_COUNT);
+  // Allocate and prepare dictionary.
+  struct span_t* dict = mem_alloc(struct span_t, MAX_CODE_COUNT);
   mem_clear(dict, MAX_CODE_COUNT);
-
-  // ...
   usize nextCode = 256;
 
   // First code is always an alphabet code.
-  usize prevCode = *codes++;
-  dict[prevCode] = (struct entry_t) {.offset = 0, .length = 1};
-  buffer_write_u8(&output, (u8) prevCode);
+  dict[*codes] = (struct span_t) {.offset = 0, .length = 1};
+  buffer_write_u8(&output, (u8) *codes++);
 
-  // While we have symbols to read.
+  // Start of the previous string output.
+  usize previous = 0;
+
+  // While we have symbols to read
   while (codes < codesEnd)
   {
-    // Read the next encoded symbol.
-    const u16 currCode = *codes++;
+    // Read the next encoded symbol
+    const u16 code = *codes++;
 
-    // ...
-    const struct entry_t currEntry = dict[currCode];
-    const struct entry_t prevEntry = dict[prevCode];
+    // Start of the current output string
+    const usize start = output.offset;
 
-    // if (currCode == 0x011D)
-    // {
-    //   printf("<%3u> => ", currCode);
-    //   for (usize i = 0; i < currEntry.length; i++)
-    //   {
-    //     u8 c = output.storage[currEntry.offset + i];
-    //     printf("[%c]", isgraph(c) ? c : ' ');
-    //   }
-    //   printf("\n");
-    // }
+    // If the code is an alphabet character...
+    if (code < 256)
+    {
+      // Write the alphabet byte to the output.
+      buffer_write_u8(&output, (u8) code);
+    }
+    // Was not an alphabet character...
+    else
+    {
+      // Get the relevant entry for the current code
+      const struct span_t* entry = &dict[code];
 
-    // ...
+      // If the code is a known dictionary entry...
+      if (entry->length > 0)
+      {
+        // Output the known dictionary entry.
+        buffer_write(&output, &output.storage[entry->offset], entry->length);
+      }
+      // The code is an unknown code...
+      else
+      {
+        // Writes "previous + current[0]" to the output.
+        buffer_write(&output, &output.storage[previous], start - previous);
+        buffer_write(&output, &output.storage[previous], 1);
+      }
+    }
+
+    // Construct the next entry for "previous + current[0]".
+    dict[nextCode++] = (struct span_t) {
+      .offset = previous,
+      .length = start - previous + 1,
+    };
+
+    // Dictionary is full, reset it to begin encoding a new chunk.
     if (nextCode == MAX_CODE_COUNT)
     {
       mem_clear(dict, MAX_CODE_COUNT);
       nextCode = 256;
     }
 
-    // ...
-    if (currCode < 256 || currEntry.length > 0) // known code
-    {
-      // (step 1) add (string(prev) + first(string(curr)))) to dict
-      // (step 2) out (string(curr))
-
-      // ------------
-      // - (step 1) -
-      // ------------
-
-      struct entry_t* nextEntry = &dict[nextCode++];
-      nextEntry->offset         = prevEntry.offset;
-      nextEntry->length         = prevEntry.length + 1;
-
-      // ------------
-      // - (step 2) -
-      // ------------
-
-      if (currCode < 256 && currEntry.length == 0)
-      {
-        struct entry_t* entry = &dict[currCode];
-
-        // Update alphabet entry, now that it exists in memory.
-        entry->offset = output.offset;
-        entry->length = 1;
-
-        // Output alphabet entry
-        buffer_write_u8(&output, (u8) currCode);
-      }
-      else
-      {
-        // Output dictionary entry
-        buffer_write(&output, &output.storage[currEntry.offset], currEntry.length);
-      }
-    }
-    else // unknown code
-    {
-      // (step 1) add (string(prev) + first(string(prev))) to dict
-      // (step 2) out (string(prev) + first(string(prev)))
-
-      // ------------
-      // - (step 1) -
-      // ------------
-
-      struct entry_t* nextEntry = &dict[nextCode++];
-      nextEntry->offset         = output.offset;
-      nextEntry->length         = prevEntry.length + 1;
-
-      // ------------
-      // - (step 2) -
-      // ------------
-
-      buffer_write(&output, &output.storage[prevEntry.offset], prevEntry.length);
-      buffer_write(&output, &output.storage[prevEntry.offset], 1);
-    }
-
-    // ...
-    prevCode = currCode;
+    // The current output string is now the previous output for the next iteration.
+    previous = start;
   }
 
-  // ...
+  // Free the dictionary memory.
   mem_delete(dict);
 
   // The user is responsible to free the output.
