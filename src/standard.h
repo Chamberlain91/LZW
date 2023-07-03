@@ -72,8 +72,8 @@ typedef struct
 #define mem_realloc(ptr, count) realloc(ptr, sizeof(typeof(*(ptr))) * (count))
 
 // Sets a block of memory to zero.
-// std::memory::clear[T](ptr: T**, count: usize)
-#define mem_clear(ptr, count) (memset((ptr), 0x0, sizeof(typeof(*(ptr))) * count))
+// std::memory::clear[T](ptr: T**, count: usize, byte: u8 = 0x0)
+#define mem_clear(ptr, count, byte) (memset((ptr), (byte), sizeof(typeof(*(ptr))) * count))
 
 // ***************
 // * Standard IO *

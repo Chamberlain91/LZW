@@ -25,17 +25,23 @@ void buffer_write(struct buffer_t* buffer, const u8* data, usize dataSize);
 // --------------------
 
 static const u32 MAX_CODE_COUNT = 1 << 16;
+static const u16 INVALID_INDEX  = MAX_CODE_COUNT - 1;
+static const u16 ALPHABET_SIZE  = 256;
 
 u8* lzw_encode(const u8* input, const usize inputSize, usize* out_outputSize)
 {
   // LZW ENCODING ALGORITHM
   // TODO: WRITE BETTER ALGORITHM STEPS
 
-  // A trie like structure.
-  struct node_t
+  // ...
+  struct entry_t
   {
-    // Points to the next node for any particular symbol.
-    struct node_t* next[256];
+    u16 character;
+    u16 prefix;
+    // Binary Tree
+    u16 first;
+    u16 left;
+    u16 right;
   };
 
   // TODO: VALIDATE / ERROR CONDITIONS
@@ -50,39 +56,110 @@ u8* lzw_encode(const u8* input, const usize inputSize, usize* out_outputSize)
   struct buffer_t output;
   buffer_init(&output, inputSize);
 
-  // Initialize dictionary.
-  struct node_t* dict = mem_alloc(struct node_t, MAX_CODE_COUNT);
-  mem_clear(dict, MAX_CODE_COUNT);
+  // Allocate dictionary memory.
+  struct entry_t* dict = mem_alloc(struct entry_t, MAX_CODE_COUNT);
 
-  // Keeps track of the next code to emit.
-  usize nextCode = 256;
+  // Initialize the first 256 entries.
+  for (u16 i = 0; i < ALPHABET_SIZE; i++)
+  {
+    dict[i] = (struct entry_t) {
+      .character = i,
+      .prefix    = INVALID_INDEX,
+      .first     = INVALID_INDEX,
+      .left      = INVALID_INDEX,
+      .right     = INVALID_INDEX,
+    };
+  }
 
-  // We iterate until we have processed all content.
+  // The first available code...?
+  usize nextCode = ALPHABET_SIZE;
+
+  // The current string begins with the first character of input.
+  u16 prefix = *input++;
+
+inputLoop: // We iterate until we have processed all content.
   while (input < inputEnd)
   {
-    // Read the longest known sequence of symbols.
-    struct node_t* node = &dict[*input++];
-    while ((input < inputEnd) && node->next[*input] != NULL)
-      node = node->next[*input++];
+    // Reads the next byte.
+    const u16 character = *input++;
 
-    // Emit code for this sequence.
-    buffer_write_u16(&output, (u16) (node - dict));
-
-    // If there is more data to encode.
-    if (input < inputEnd)
+    // Find the current string in dictionary...
+    u16 searchIndex = dict[prefix].first;
+    if (searchIndex == INVALID_INDEX)
     {
-      // Update dictionary, concatenate previous string with new symbol.
-      node->next[*input] = &dict[nextCode++];
-
-      // Dictionary is full, reset it to begin encoding a new chunk.
-      if (nextCode == MAX_CODE_COUNT)
+      // Point this prefix string to the first entry that consumes this prefix.
+      dict[prefix].first = (u16) nextCode;
+    }
+    else
+    {
+      // Traverse the prefix binary tree, searching for desired character.
+      while (true)
       {
-        // printf("RESET CODES\n");
-        mem_clear(dict, MAX_CODE_COUNT);
-        nextCode = 256;
+        struct entry_t* entry = &dict[searchIndex];
+
+        // If we find an exact character match...
+        if (character == entry->character)
+        {
+          // We need to continue reading input until we do not find a prefix entry.
+          prefix = searchIndex;
+          goto inputLoop;
+        }
+        else
+        {
+          // Get the left or right child member dependant on ordinal comparison.
+          u16* child = (character < entry->character) ? &entry->left : &entry->right;
+
+          if ((*child) == INVALID_INDEX)
+          {
+            // Unable to find an entry for the desired character, it will be created.
+            *child = (u16) nextCode;
+            break;
+          }
+
+          // Has a child, so we will continue looking for the desired character.
+          searchIndex = *child;
+        }
       }
     }
+
+    // We could not find an entry for the current string, create it.
+    // Each entry is represented by its prefix entry and suffix character.
+    dict[nextCode++] = (struct entry_t) {
+      .character = character,
+      .prefix    = prefix,
+      .first     = INVALID_INDEX,
+      .left      = INVALID_INDEX,
+      .right     = INVALID_INDEX,
+    };
+
+    // Dictionary is full, reset it to begin encoding a new chunk.
+    if (nextCode == MAX_CODE_COUNT)
+    {
+      // Reset the first 256 entries.
+      for (u16 i = 0; i < ALPHABET_SIZE; i++)
+      {
+        dict[i] = (struct entry_t) {
+          .character = i,
+          .prefix    = INVALID_INDEX,
+          .first     = INVALID_INDEX,
+          .left      = INVALID_INDEX,
+          .right     = INVALID_INDEX,
+        };
+      }
+
+      // Reset next available code.
+      nextCode = ALPHABET_SIZE;
+    }
+
+    // Emit code for this sequence.
+    buffer_write_u16(&output, prefix);
+
+    // Start matching a new string.
+    prefix = character;
   }
+
+  // Outputs the final string.
+  buffer_write_u16(&output, prefix);
 
   // Free the dictionary memory.
   mem_delete(dict);
@@ -120,10 +197,10 @@ u8* lzw_decode(const u8* input, usize inputSize, usize* out_outputSize)
   struct buffer_t output;
   buffer_init(&output, inputSize);
 
-  // Allocate and prepare dictionary.
+  // Initialize dictionary.
   struct span_t* dict = mem_alloc(struct span_t, MAX_CODE_COUNT);
-  mem_clear(dict, MAX_CODE_COUNT);
-  usize nextCode = 256;
+  mem_clear(dict, MAX_CODE_COUNT, 0x0);
+  usize nextCode = ALPHABET_SIZE;
 
   // First code is always an alphabet code.
   dict[*codes] = (struct span_t) {.offset = 0, .length = 1};
@@ -142,7 +219,7 @@ u8* lzw_decode(const u8* input, usize inputSize, usize* out_outputSize)
     const usize start = output.offset;
 
     // If the code is an alphabet character...
-    if (code < 256)
+    if (code < ALPHABET_SIZE)
     {
       // Write the alphabet byte to the output.
       buffer_write_u8(&output, (u8) code);
@@ -177,8 +254,8 @@ u8* lzw_decode(const u8* input, usize inputSize, usize* out_outputSize)
     // Dictionary is full, reset it to begin encoding a new chunk.
     if (nextCode == MAX_CODE_COUNT)
     {
-      mem_clear(dict, MAX_CODE_COUNT);
-      nextCode = 256;
+      mem_clear(dict, MAX_CODE_COUNT, 0x0);
+      nextCode = ALPHABET_SIZE;
     }
 
     // The current output string is now the previous output for the next iteration.
