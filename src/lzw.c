@@ -24,25 +24,65 @@ void buffer_write(struct buffer_t* buffer, const u8* data, usize dataSize);
 //  LZW IMPLEMENTATION
 // --------------------
 
-static const u32 MAX_CODE_COUNT = 1 << 16;
-static const u16 INVALID_INDEX  = MAX_CODE_COUNT - 1;
-static const u16 ALPHABET_SIZE  = 256;
+#define MAX_CODE_COUNT (1 << 16)
+#define INVALID_INDEX  (MAX_CODE_COUNT - 1)
+#define ALPHABET_SIZE  (256)
+
+struct encoder_dict_t
+{
+  u16* characters;
+  u16* firsts;
+  u16* lefts;
+  u16* rights;
+};
+
+u16 encoder_dict_search(struct encoder_dict_t* dict, const u16 prefix, const u16 character,
+                        const usize nextCode)
+{
+  // Find the current string in dictionary...
+  u16 index = dict->firsts[prefix];
+  if (index == INVALID_INDEX)
+  {
+    // Point this prefix string to the first entry that consumes this prefix.
+    dict->firsts[prefix] = (u16) nextCode;
+  }
+  else
+  {
+    // Traverse the prefix binary tree, searching for desired character.
+    while (true)
+    {
+      // If we find an exact character match...
+      if (character == dict->characters[index])
+      {
+        // We need to continue reading input until we do not find a prefix entry.
+        return index;
+      }
+      else
+      {
+        // Get the left or right child member dependant on ordinal comparison.
+        u16* child =
+          (character < dict->characters[index]) ? &dict->lefts[index] : &dict->rights[index];
+
+        if ((*child) == INVALID_INDEX)
+        {
+          // Unable to find an entry for the desired character, it will be created.
+          *child = (u16) nextCode;
+          break;
+        }
+
+        // Has a child, so we will continue looking for the desired character.
+        index = *child;
+      }
+    }
+  }
+
+  return INVALID_INDEX;
+}
 
 u8* lzw_encode(const u8* input, const usize inputSize, usize* out_outputSize)
 {
   // LZW ENCODING ALGORITHM
   // TODO: WRITE BETTER ALGORITHM STEPS
-
-  // ...
-  struct entry_t
-  {
-    u16 character;
-    u16 prefix;
-    // Binary Tree
-    u16 first;
-    u16 left;
-    u16 right;
-  };
 
   // TODO: VALIDATE / ERROR CONDITIONS
   // error: inputSize == 0
@@ -57,95 +97,64 @@ u8* lzw_encode(const u8* input, const usize inputSize, usize* out_outputSize)
   buffer_init(&output, inputSize);
 
   // Allocate dictionary memory.
-  struct entry_t* dict = mem_alloc(struct entry_t, MAX_CODE_COUNT);
+  // We allocate each component is on its own for cache access reasons.
+  struct encoder_dict_t dict;
+  dict.characters = mem_alloc(u16, MAX_CODE_COUNT);
+  dict.firsts     = mem_alloc(u16, MAX_CODE_COUNT);
+  dict.lefts      = mem_alloc(u16, MAX_CODE_COUNT);
+  dict.rights     = mem_alloc(u16, MAX_CODE_COUNT);
 
-  // Initialize the first 256 entries.
+  // Initialize the first 256 character entries.
   for (u16 i = 0; i < ALPHABET_SIZE; i++)
-  {
-    dict[i] = (struct entry_t) {
-      .character = i,
-      .prefix    = INVALID_INDEX,
-      .first     = INVALID_INDEX,
-      .left      = INVALID_INDEX,
-      .right     = INVALID_INDEX,
-    };
-  }
+    dict.characters[i] = i;
 
-  // The first available code...?
+  // Sets the bits of firsts, lefts, and rights to all ones.
+  // Giving each entry the value of INVALID_INDEX.
+  mem_clear(dict.firsts, ALPHABET_SIZE, 0xFF);
+  mem_clear(dict.lefts, ALPHABET_SIZE, 0xFF);
+  mem_clear(dict.rights, ALPHABET_SIZE, 0xFF);
+
+  // The first available code is entry after the end of the alphabet.
   usize nextCode = ALPHABET_SIZE;
 
   // The current string begins with the first character of input.
   u16 prefix = *input++;
 
-inputLoop: // We iterate until we have processed all content.
+  // inputLoop:
+  // We iterate until we have processed all content.
   while (input < inputEnd)
   {
     // Reads the next byte.
     const u16 character = *input++;
 
-    // Find the current string in dictionary...
-    u16 searchIndex = dict[prefix].first;
-    if (searchIndex == INVALID_INDEX)
+    // Attempt to find if current string (prefix + character) is in the dictionary...
+    const u16 index = encoder_dict_search(&dict, prefix, character, nextCode);
+    if (index != INVALID_INDEX)
     {
-      // Point this prefix string to the first entry that consumes this prefix.
-      dict[prefix].first = (u16) nextCode;
-    }
-    else
-    {
-      // Traverse the prefix binary tree, searching for desired character.
-      while (true)
-      {
-        struct entry_t* entry = &dict[searchIndex];
-
-        // If we find an exact character match...
-        if (character == entry->character)
-        {
-          // We need to continue reading input until we do not find a prefix entry.
-          prefix = searchIndex;
-          goto inputLoop;
-        }
-        else
-        {
-          // Get the left or right child member dependant on ordinal comparison.
-          u16* child = (character < entry->character) ? &entry->left : &entry->right;
-
-          if ((*child) == INVALID_INDEX)
-          {
-            // Unable to find an entry for the desired character, it will be created.
-            *child = (u16) nextCode;
-            break;
-          }
-
-          // Has a child, so we will continue looking for the desired character.
-          searchIndex = *child;
-        }
-      }
+      // It was in the dictionary, so we need to continue until we reach an unknown string.
+      prefix = index;
+      continue;
     }
 
-    // We could not find an entry for the current string, create it.
-    // Each entry is represented by its prefix entry and suffix character.
-    dict[nextCode++] = (struct entry_t) {
-      .character = character,
-      .prefix    = prefix,
-      .first     = INVALID_INDEX,
-      .left      = INVALID_INDEX,
-      .right     = INVALID_INDEX,
-    };
+    // We could not find an entry for the current string and thus we will create it.
+    // Each entry is represented by its prefix entry and suffix character. In addition
+    // we store linked binary tree to accelerate lookup times.
+    dict.characters[nextCode] = character;
+    dict.firsts[nextCode]     = INVALID_INDEX;
+    dict.lefts[nextCode]      = INVALID_INDEX;
+    dict.rights[nextCode++]   = INVALID_INDEX;
 
     // Dictionary is full, reset it to begin encoding a new chunk.
     if (nextCode == MAX_CODE_COUNT)
     {
-      // Reset the first 256 entries.
+      // Reset the first 256 character entries.
       for (u16 i = 0; i < ALPHABET_SIZE; i++)
-      {
-        dict[i] = (struct entry_t) {
-          .character = i,
-          .prefix    = INVALID_INDEX,
-          .first     = INVALID_INDEX,
-          .left      = INVALID_INDEX,
-          .right     = INVALID_INDEX,
-        };
-      }
+        dict.characters[i] = i;
+
+      // Reset firsts, lefts, and rights.
+      mem_clear(dict.firsts, ALPHABET_SIZE, 0xFF);
+      mem_clear(dict.lefts, ALPHABET_SIZE, 0xFF);
+      mem_clear(dict.rights, ALPHABET_SIZE, 0xFF);
 
       // Reset next available code.
       nextCode = ALPHABET_SIZE;
@@ -162,7 +171,10 @@ inputLoop: // We iterate until we have processed all content.
   buffer_write_u16(&output, prefix);
 
   // Free the dictionary memory.
-  mem_delete(dict);
+  mem_delete(dict.characters);
+  mem_delete(dict.firsts);
+  mem_delete(dict.lefts);
+  mem_delete(dict.rights);
 
   // The user is responsible to free the output.
   *out_outputSize = output.offset;
